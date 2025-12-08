@@ -14,6 +14,16 @@ function extractVideoId(url: string): string | null {
   return match ? match[1] : null;
 }
 
+function parseTranscriptToSegments(text: string): Array<{ text: string; start: number; duration: number }> {
+  // Split by sentences and create simple segments
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  return sentences.map((sentence, index) => ({
+    text: sentence.trim(),
+    start: index * 10, // Simple approximation
+    duration: 10
+  }));
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -56,13 +66,17 @@ export async function registerRoutes(
 
       const data = await response.json();
 
+      // Parse the transcript - API returns { transcription: "text..." }
+      const transcriptText = data.transcription || data.transcript || "";
+      const segments = parseTranscriptToSegments(transcriptText);
+
       // Store in database
       const transcript = await storage.insertTranscript({
         youtubeUrl: url,
         videoId,
         title: data.metadata?.title || null,
         channel: data.metadata?.channel || null,
-        transcript: data.transcript || data,
+        transcript: segments,
       });
 
       res.json(transcript);
