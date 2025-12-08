@@ -1,29 +1,49 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { INITIAL_CHAT_MESSAGES, ChatMessage, MOCK_TRANSCRIPT } from "@/lib/mockData";
 import { Send, Bot, User, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { getGroqChatResponse, ChatMessage as GroqMessage } from "@/lib/groq";
+import { useState, useEffect, useRef } from "react";
+import { sendChatMessage, type ChatMessage } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
 interface ChatInterfaceProps {
   className?: string;
+  transcriptText: string;
 }
 
-export function ChatInterface({ className }: ChatInterfaceProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
+interface DisplayMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+}
+
+export function ChatInterface({ className, transcriptText }: ChatInterfaceProps) {
+  const [messages, setMessages] = useState<DisplayMessage[]>([
+    {
+      id: '1',
+      role: 'assistant',
+      content: "Hi! I've analyzed the video. You can ask me anything about the content, like 'What are the main takeaways?' or 'Summarize the key points'.",
+      timestamp: new Date()
+    }
+  ]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const { toast } = useToast();
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, isTyping]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isTyping) return;
 
-    const userMsg: ChatMessage = {
+    const userMsg: DisplayMessage = {
       id: Date.now().toString(),
       role: 'user',
       content: input,
@@ -35,32 +55,16 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
     setIsTyping(true);
 
     try {
-      // Prepare context from transcript
-      const transcriptText = MOCK_TRANSCRIPT.map(s => s.text).join(" ");
-      const systemPrompt: GroqMessage = {
-        role: 'system',
-        content: `You are a helpful AI assistant analyzing a video transcript. 
-        Here is the transcript of the video:
-        "${transcriptText}"
-        
-        Answer the user's questions based primarily on this transcript. If the answer is not in the transcript, say so.`
-      };
-
-      // Convert chat history to Groq format
-      const history: GroqMessage[] = messages.map(m => ({
-        role: m.role as 'user' | 'assistant',
+      // Convert to API format
+      const apiMessages: ChatMessage[] = messages.map(m => ({
+        role: m.role,
         content: m.content
       }));
+      apiMessages.push({ role: 'user', content: userMsg.content });
 
-      // Add current message
-      const currentMsg: GroqMessage = {
-        role: 'user',
-        content: userMsg.content
-      };
+      const responseContent = await sendChatMessage(apiMessages, transcriptText);
 
-      const responseContent = await getGroqChatResponse([systemPrompt, ...history, currentMsg]);
-
-      const aiMsg: ChatMessage = {
+      const aiMsg: DisplayMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: responseContent,
@@ -68,15 +72,13 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
       };
       setMessages(prev => [...prev, aiMsg]);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Chat Error:", error);
       toast({
         title: "Error",
-        description: "Failed to get AI response. Please try again.",
+        description: error.message || "Failed to get AI response. Please try again.",
         variant: "destructive"
       });
-      // Remove the user message if it failed? Or just leave it?
-      // Leaving it is fine, user can retry.
     } finally {
       setIsTyping(false);
     }
@@ -90,13 +92,13 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
           <Sparkles className="w-4 h-4 text-primary" />
         </div>
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">AI Assistant (Powered by Groq)</h3>
-          <p className="text-xs text-slate-500">Ask anything about the video</p>
+          <h3 className="text-sm font-semibold text-slate-900">AI Assistant</h3>
+          <p className="text-xs text-slate-500">Powered by Groq LLM</p>
         </div>
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 custom-scrollbar p-4">
+      <ScrollArea className="flex-1 custom-scrollbar p-4" ref={scrollRef}>
         <div className="space-y-6">
           {messages.map((msg) => (
             <div 
@@ -115,7 +117,7 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
                 {msg.role === 'assistant' ? <Bot className="w-4 h-4" /> : <User className="w-4 h-4" />}
               </div>
               <div className={cn(
-                "max-w-[85%] p-3.5 rounded-2xl text-sm leading-relaxed",
+                "max-w-[85%] p-3.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap",
                 msg.role === 'assistant' 
                   ? "bg-slate-50 border border-slate-100 text-slate-800 rounded-tl-none" 
                   : "bg-primary text-white shadow-md shadow-primary/20 rounded-tr-none"
@@ -155,6 +157,7 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
             size="icon" 
             className="absolute right-1 top-1 h-9 w-9 bg-primary hover:bg-primary/90 transition-colors"
             disabled={!input.trim() || isTyping}
+            data-testid="button-send-chat"
           >
             <Send className="w-4 h-4" />
           </Button>

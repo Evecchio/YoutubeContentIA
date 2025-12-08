@@ -1,38 +1,28 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import { db } from "./db";
+import { transcripts, type InsertTranscript, type Transcript } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getTranscriptByUrl(url: string): Promise<Transcript | undefined>;
+  getTranscriptByVideoId(videoId: string): Promise<Transcript | undefined>;
+  insertTranscript(transcript: InsertTranscript): Promise<Transcript>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
+class Storage implements IStorage {
+  async getTranscriptByUrl(url: string): Promise<Transcript | undefined> {
+    const result = await db.select().from(transcripts).where(eq(transcripts.youtubeUrl, url));
+    return result[0];
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+  async getTranscriptByVideoId(videoId: string): Promise<Transcript | undefined> {
+    const result = await db.select().from(transcripts).where(eq(transcripts.videoId, videoId));
+    return result[0];
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  async insertTranscript(transcript: InsertTranscript): Promise<Transcript> {
+    const result = await db.insert(transcripts).values(transcript).returning();
+    return result[0];
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new Storage();

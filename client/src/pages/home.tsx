@@ -1,12 +1,11 @@
 import { Video, Sparkles, MessageSquare, ArrowRight, Loader2 } from "lucide-react";
-import { Link } from "wouter";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
-import { transcribeUrl } from "@/lib/rapidapi";
+import { transcribeVideo } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Home() {
@@ -19,21 +18,18 @@ export default function Home() {
     e.preventDefault();
     if (!url) return;
 
-    // For demo purposes, we will mostly rely on the mock data in the dashboard
-    // but here is how we would call the API
     setIsLoading(true);
     try {
-      // In a real app, we would wait for this and pass data
-      // const data = await transcribeUrl(url); 
+      const data = await transcribeVideo(url);
       
-      // Simulate network delay for effect
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Store transcript data in sessionStorage for the dashboard
+      sessionStorage.setItem('currentTranscript', JSON.stringify(data));
       
-      setLocation("/watch/demo");
-    } catch (error) {
+      setLocation(`/watch/${data.videoId}`);
+    } catch (error: any) {
       toast({
         title: "Error",
-        description: "Could not transcribe video. Please try again.",
+        description: error.message || "Could not transcribe video. Please try again.",
         variant: "destructive"
       });
     } finally {
@@ -112,7 +108,7 @@ export default function Home() {
           <FeatureCard 
             icon={<Video className="w-6 h-6 text-primary" />}
             title="Instant Transcription"
-            description="Get accurate text from any video in seconds using Whisper AI technology."
+            description="Get accurate text from any video in seconds using AI technology."
           />
           <FeatureCard 
             icon={<MessageSquare className="w-6 h-6 text-primary" />}
