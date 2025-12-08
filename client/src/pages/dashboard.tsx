@@ -3,9 +3,7 @@ import { ArrowLeft, Share2, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VideoPlayer } from "@/components/video-player";
-import { TranscriptView } from "@/components/transcript-view";
-import { ChatInterface } from "@/components/chat-interface";
-import { useState } from "react";
+import { ToolsView } from "@/components/tools-view";
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("transcript");
@@ -61,7 +59,7 @@ export default function Dashboard() {
         {/* Right Col: Tabs (Transcript/Chat) */}
         <div className="lg:col-span-5 h-[600px] lg:h-[calc(100vh-140px)] min-h-[500px]">
           <Tabs defaultValue="transcript" className="h-full flex flex-col" onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-2 mb-4 p-1 bg-slate-100 rounded-xl">
+            <TabsList className="grid w-full grid-cols-3 mb-4 p-1 bg-slate-100 rounded-xl">
               <TabsTrigger 
                 value="transcript"
                 className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
@@ -74,6 +72,12 @@ export default function Dashboard() {
               >
                 AI Chat
               </TabsTrigger>
+              <TabsTrigger 
+                value="tools"
+                className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
+              >
+                Tools
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="transcript" className="flex-1 mt-0 h-full min-h-0">
@@ -82,6 +86,10 @@ export default function Dashboard() {
             
             <TabsContent value="chat" className="flex-1 mt-0 h-full min-h-0">
               <ChatInterface className="h-full" />
+            </TabsContent>
+
+            <TabsContent value="tools" className="flex-1 mt-0 h-full min-h-0">
+              <ToolsView />
             </TabsContent>
           </Tabs>
         </div>
