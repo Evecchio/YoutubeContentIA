@@ -3,7 +3,10 @@ import { ArrowLeft, Share2, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VideoPlayer } from "@/components/video-player";
+import { TranscriptView } from "@/components/transcript-view";
+import { ChatInterface } from "@/components/chat-interface";
 import { ToolsView } from "@/components/tools-view";
+import { useState } from "react";
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("transcript");

@@ -1,4 +1,4 @@
-import { Video, Sparkles, MessageSquare, ArrowRight } from "lucide-react";
+import { Video, Sparkles, MessageSquare, ArrowRight, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 import { useState } from "react";
 import { useLocation } from "wouter";
@@ -6,16 +6,38 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
+import { transcribeUrl } from "@/lib/rapidapi";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Home() {
   const [url, setUrl] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [_, setLocation] = useLocation();
+  const { toast } = useToast();
 
-  const handleTranscribe = (e: React.FormEvent) => {
+  const handleTranscribe = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (url) {
-      // In a real app we'd validate the ID
+    if (!url) return;
+
+    // For demo purposes, we will mostly rely on the mock data in the dashboard
+    // but here is how we would call the API
+    setIsLoading(true);
+    try {
+      // In a real app, we would wait for this and pass data
+      // const data = await transcribeUrl(url); 
+      
+      // Simulate network delay for effect
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
       setLocation("/watch/demo");
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Could not transcribe video. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -61,11 +83,26 @@ export default function Home() {
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   data-testid="input-url"
+                  disabled={isLoading}
                 />
               </div>
-              <Button size="lg" className="h-12 md:h-14 px-8 text-base font-medium rounded-xl shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all" data-testid="button-transcribe">
-                Transcribe Now
-                <ArrowRight className="ml-2 w-5 h-5" />
+              <Button 
+                size="lg" 
+                className="h-12 md:h-14 px-8 text-base font-medium rounded-xl shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all min-w-[160px]" 
+                data-testid="button-transcribe"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Processing
+                  </>
+                ) : (
+                  <>
+                    Transcribe Now
+                    <ArrowRight className="ml-2 w-5 h-5" />
+                  </>
+                )}
               </Button>
             </form>
           </CardContent>
