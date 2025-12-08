@@ -1,11 +1,13 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { INITIAL_CHAT_MESSAGES, ChatMessage } from "@/lib/mockData";
+import { INITIAL_CHAT_MESSAGES, ChatMessage, MOCK_TRANSCRIPT } from "@/lib/mockData";
 import { Send, Bot, User, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { getGroqChatResponse, ChatMessage as GroqMessage } from "@/lib/groq";
+import { useToast } from "@/hooks/use-toast";
 
 interface ChatInterfaceProps {
   className?: string;
@@ -15,8 +17,9 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const { toast } = useToast();
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
 
@@ -31,17 +34,52 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
     setInput("");
     setIsTyping(true);
 
-    // Mock AI response
-    setTimeout(() => {
-      setIsTyping(false);
+    try {
+      // Prepare context from transcript
+      const transcriptText = MOCK_TRANSCRIPT.map(s => s.text).join(" ");
+      const systemPrompt: GroqMessage = {
+        role: 'system',
+        content: `You are a helpful AI assistant analyzing a video transcript. 
+        Here is the transcript of the video:
+        "${transcriptText}"
+        
+        Answer the user's questions based primarily on this transcript. If the answer is not in the transcript, say so.`
+      };
+
+      // Convert chat history to Groq format
+      const history: GroqMessage[] = messages.map(m => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content
+      }));
+
+      // Add current message
+      const currentMsg: GroqMessage = {
+        role: 'user',
+        content: userMsg.content
+      };
+
+      const responseContent = await getGroqChatResponse([systemPrompt, ...history, currentMsg]);
+
       const aiMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: "That's a great question. Based on the video, the speaker emphasizes that AI tools are best used as 'augmentations' rather than replacements. Specifically, in the coding section (0:15), he mentions that copilots handle the boilerplate, allowing developers to focus on higher-level architecture.",
+        content: responseContent,
         timestamp: new Date()
       };
       setMessages(prev => [...prev, aiMsg]);
-    }, 1500);
+
+    } catch (error) {
+      console.error("Chat Error:", error);
+      toast({
+        title: "Error",
+        description: "Failed to get AI response. Please try again.",
+        variant: "destructive"
+      });
+      // Remove the user message if it failed? Or just leave it?
+      // Leaving it is fine, user can retry.
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   return (
@@ -52,7 +90,7 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
           <Sparkles className="w-4 h-4 text-primary" />
         </div>
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">AI Assistant</h3>
+          <h3 className="text-sm font-semibold text-slate-900">AI Assistant (Powered by Groq)</h3>
           <p className="text-xs text-slate-500">Ask anything about the video</p>
         </div>
       </div>
@@ -110,12 +148,13 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
             placeholder="Ask a question..." 
             className="pr-12 h-11 bg-slate-50 border-slate-200 focus-visible:ring-primary/20" 
             data-testid="input-chat"
+            disabled={isTyping}
           />
           <Button 
             type="submit" 
             size="icon" 
             className="absolute right-1 top-1 h-9 w-9 bg-primary hover:bg-primary/90 transition-colors"
-            disabled={!input.trim()}
+            disabled={!input.trim() || isTyping}
           >
             <Send className="w-4 h-4" />
           </Button>
