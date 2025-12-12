@@ -3,75 +3,30 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { z } from "zod";
 import { YoutubeTranscript } from "youtube-transcript";
-import { GoogleGenAI } from "@google/genai";
-import { exec } from "child_process";
-import { promisify } from "util";
-import * as fs from "fs";
-import * as path from "path";
-import * as os from "os";
-
-const execAsync = promisify(exec);
+import { AssemblyAI } from "assemblyai";
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY || "";
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
-  vertexai: false,
-  httpOptions: {
-    baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
+async function transcribeWithAssemblyAI(videoId: string): Promise<string> {
+  if (!ASSEMBLYAI_API_KEY) {
+    throw new Error("Se requiere una API key de AssemblyAI para transcribir videos sin subtítulos. Regístrate gratis en assemblyai.com para obtener $50 en créditos.");
   }
-});
-
-async function downloadAudioFromYouTube(videoId: string): Promise<Buffer> {
-  const url = `https://www.youtube.com/watch?v=${videoId}`;
-  const tempDir = os.tmpdir();
-  const outputPath = path.join(tempDir, `${videoId}.mp3`);
   
-  try {
-    // Use yt-dlp to download audio
-    await execAsync(`yt-dlp -x --audio-format mp3 --audio-quality 9 -o "${outputPath}" "${url}"`, {
-      timeout: 120000 // 2 minute timeout
-    });
-    
-    const audioBuffer = await fs.promises.readFile(outputPath);
-    
-    // Clean up temp file
-    await fs.promises.unlink(outputPath).catch(() => {});
-    
-    return audioBuffer;
-  } catch (error: any) {
-    // Clean up on error
-    await fs.promises.unlink(outputPath).catch(() => {});
-    throw new Error(`Error descargando audio: ${error.message}`);
-  }
-}
-
-async function transcribeWithGemini(audioBuffer: Buffer): Promise<string> {
-  const base64Audio = audioBuffer.toString('base64');
+  const client = new AssemblyAI({ apiKey: ASSEMBLYAI_API_KEY });
+  const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
   
-  const result = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            inlineData: {
-              mimeType: "audio/mpeg",
-              data: base64Audio
-            }
-          },
-          {
-            text: "Please transcribe this audio completely. Return only the transcription text, nothing else."
-          }
-        ]
-      }
-    ]
+  const transcript = await client.transcripts.transcribe({
+    audio_url: youtubeUrl,
+    speech_model: "nano" as any
   });
   
-  const text = result.response?.text?.() || result.text || "";
-  return text;
+  if (transcript.status === "error") {
+    throw new Error(transcript.error || "Error en la transcripción con AssemblyAI");
+  }
+  
+  return transcript.text || "";
 }
 
 function parseTranscriptToSegments(text: string): Array<{ text: string; start: number; duration: number }> {
@@ -132,14 +87,11 @@ export async function registerRoutes(
         console.log("No subtitles available, will use AI transcription:", fetchError.message);
       }
       
-      // If no subtitles, use Gemini AI to transcribe
+      // If no subtitles, use AssemblyAI to transcribe
       if (segments.length === 0) {
-        console.log("Downloading audio for AI transcription...");
+        console.log("Using AssemblyAI for transcription...");
         try {
-          const audioBuffer = await downloadAudioFromYouTube(videoId);
-          console.log(`Downloaded audio: ${audioBuffer.length} bytes`);
-          
-          const transcriptText = await transcribeWithGemini(audioBuffer);
+          const transcriptText = await transcribeWithAssemblyAI(videoId);
           console.log("AI transcription complete");
           
           if (!transcriptText || transcriptText.trim().length === 0) {
@@ -150,7 +102,7 @@ export async function registerRoutes(
           usedAI = true;
         } catch (aiError: any) {
           console.error("AI transcription error:", aiError);
-          throw new Error("No se pudo transcribir el video. " + (aiError.message || ""));
+          throw new Error(aiError.message || "No se pudo transcribir el video.");
         }
       }
 
