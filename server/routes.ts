@@ -4,11 +4,13 @@ import { storage } from "./storage";
 import { z } from "zod";
 import { YoutubeTranscript } from "youtube-transcript";
 import { GoogleGenAI } from "@google/genai";
-import ytdl from "@distube/ytdl-core";
-import { Readable } from "stream";
+import { exec } from "child_process";
+import { promisify } from "util";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+
+const execAsync = promisify(exec);
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
@@ -23,18 +25,26 @@ const ai = new GoogleGenAI({
 
 async function downloadAudioFromYouTube(videoId: string): Promise<Buffer> {
   const url = `https://www.youtube.com/watch?v=${videoId}`;
+  const tempDir = os.tmpdir();
+  const outputPath = path.join(tempDir, `${videoId}.mp3`);
   
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    const stream = ytdl(url, { 
-      filter: 'audioonly',
-      quality: 'lowestaudio'
+  try {
+    // Use yt-dlp to download audio
+    await execAsync(`yt-dlp -x --audio-format mp3 --audio-quality 9 -o "${outputPath}" "${url}"`, {
+      timeout: 120000 // 2 minute timeout
     });
     
-    stream.on('data', (chunk: Buffer) => chunks.push(chunk));
-    stream.on('end', () => resolve(Buffer.concat(chunks)));
-    stream.on('error', reject);
-  });
+    const audioBuffer = await fs.promises.readFile(outputPath);
+    
+    // Clean up temp file
+    await fs.promises.unlink(outputPath).catch(() => {});
+    
+    return audioBuffer;
+  } catch (error: any) {
+    // Clean up on error
+    await fs.promises.unlink(outputPath).catch(() => {});
+    throw new Error(`Error descargando audio: ${error.message}`);
+  }
 }
 
 async function transcribeWithGemini(audioBuffer: Buffer): Promise<string> {
@@ -48,7 +58,7 @@ async function transcribeWithGemini(audioBuffer: Buffer): Promise<string> {
         parts: [
           {
             inlineData: {
-              mimeType: "audio/webm",
+              mimeType: "audio/mpeg",
               data: base64Audio
             }
           },
