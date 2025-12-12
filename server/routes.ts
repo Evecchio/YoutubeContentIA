@@ -3,9 +3,75 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { z } from "zod";
 import { YoutubeTranscript } from "youtube-transcript";
+import { GoogleGenAI } from "@google/genai";
+import ytdl from "@distube/ytdl-core";
+import { Readable } from "stream";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+
+const ai = new GoogleGenAI({
+  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
+  vertexai: false,
+  httpOptions: {
+    baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
+  }
+});
+
+async function downloadAudioFromYouTube(videoId: string): Promise<Buffer> {
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
+  
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const stream = ytdl(url, { 
+      filter: 'audioonly',
+      quality: 'lowestaudio'
+    });
+    
+    stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
+}
+
+async function transcribeWithGemini(audioBuffer: Buffer): Promise<string> {
+  const base64Audio = audioBuffer.toString('base64');
+  
+  const result = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            inlineData: {
+              mimeType: "audio/webm",
+              data: base64Audio
+            }
+          },
+          {
+            text: "Please transcribe this audio completely. Return only the transcription text, nothing else."
+          }
+        ]
+      }
+    ]
+  });
+  
+  const text = result.response?.text?.() || result.text || "";
+  return text;
+}
+
+function parseTranscriptToSegments(text: string): Array<{ text: string; start: number; duration: number }> {
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  return sentences.map((sentence, index) => ({
+    text: sentence.trim(),
+    start: index * 5,
+    duration: 5
+  }));
+}
 
 function extractVideoId(url: string): string | null {
   const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
@@ -38,28 +104,45 @@ export async function registerRoutes(
         return res.json(cached);
       }
 
-      // Fetch transcript using free youtube-transcript package
-      let transcriptData;
+      // Try to get subtitles first (free and fast)
+      let segments: Array<{ text: string; start: number; duration: number }> = [];
+      let usedAI = false;
+      
       try {
-        transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
-      } catch (fetchError: any) {
-        console.error("YouTube transcript fetch error:", fetchError);
-        if (fetchError.message?.includes("disabled") || fetchError.message?.includes("Transcript")) {
-          throw new Error("Este video no tiene subtítulos disponibles. Por favor, intenta con otro video que tenga subtítulos activados.");
+        const transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
+        if (transcriptData && transcriptData.length > 0) {
+          segments = transcriptData.map((item: any) => ({
+            text: item.text,
+            start: item.offset / 1000,
+            duration: item.duration / 1000
+          }));
+          console.log("Got transcript from YouTube subtitles");
         }
-        throw new Error("No se pudo obtener la transcripción. El video puede no tener subtítulos o YouTube bloqueó la solicitud.");
+      } catch (fetchError: any) {
+        console.log("No subtitles available, will use AI transcription:", fetchError.message);
       }
       
-      if (!transcriptData || transcriptData.length === 0) {
-        throw new Error("Este video no tiene subtítulos disponibles. Por favor, intenta con otro video.");
+      // If no subtitles, use Gemini AI to transcribe
+      if (segments.length === 0) {
+        console.log("Downloading audio for AI transcription...");
+        try {
+          const audioBuffer = await downloadAudioFromYouTube(videoId);
+          console.log(`Downloaded audio: ${audioBuffer.length} bytes`);
+          
+          const transcriptText = await transcribeWithGemini(audioBuffer);
+          console.log("AI transcription complete");
+          
+          if (!transcriptText || transcriptText.trim().length === 0) {
+            throw new Error("No se pudo transcribir el audio del video.");
+          }
+          
+          segments = parseTranscriptToSegments(transcriptText);
+          usedAI = true;
+        } catch (aiError: any) {
+          console.error("AI transcription error:", aiError);
+          throw new Error("No se pudo transcribir el video. " + (aiError.message || ""));
+        }
       }
-
-      // Convert to our segment format
-      const segments = transcriptData.map((item: any) => ({
-        text: item.text,
-        start: item.offset / 1000, // Convert ms to seconds
-        duration: item.duration / 1000
-      }));
 
       // Store in database
       const transcript = await storage.insertTranscript({
