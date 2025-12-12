@@ -2,9 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { z } from "zod";
+import { YoutubeTranscript } from "youtube-transcript";
 
-const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || "";
-const RAPIDAPI_HOST = "youtube-transcripts-transcribe-youtube-video-to-text.p.rapidapi.com";
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 
@@ -12,16 +11,6 @@ function extractVideoId(url: string): string | null {
   const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
   const match = url.match(regex);
   return match ? match[1] : null;
-}
-
-function parseTranscriptToSegments(text: string): Array<{ text: string; start: number; duration: number }> {
-  // Split by sentences and create simple segments
-  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-  return sentences.map((sentence, index) => ({
-    text: sentence.trim(),
-    start: index * 10, // Simple approximation
-    duration: 10
-  }));
 }
 
 export async function registerRoutes(
@@ -49,33 +38,26 @@ export async function registerRoutes(
         return res.json(cached);
       }
 
-      // Fetch from RapidAPI
-      const response = await fetch(`https://${RAPIDAPI_HOST}/transcribe`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-rapidapi-host': RAPIDAPI_HOST,
-          'x-rapidapi-key': RAPIDAPI_KEY
-        },
-        body: JSON.stringify({ url })
-      });
-
-      if (!response.ok) {
-        throw new Error(`RapidAPI Error: ${response.statusText}`);
+      // Fetch transcript using free youtube-transcript package
+      const transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
+      
+      if (!transcriptData || transcriptData.length === 0) {
+        throw new Error("No transcript available for this video");
       }
 
-      const data = await response.json();
-
-      // Parse the transcript - API returns { transcription: "text..." }
-      const transcriptText = data.transcription || data.transcript || "";
-      const segments = parseTranscriptToSegments(transcriptText);
+      // Convert to our segment format
+      const segments = transcriptData.map((item: any) => ({
+        text: item.text,
+        start: item.offset / 1000, // Convert ms to seconds
+        duration: item.duration / 1000
+      }));
 
       // Store in database
       const transcript = await storage.insertTranscript({
         youtubeUrl: url,
         videoId,
-        title: data.metadata?.title || null,
-        channel: data.metadata?.channel || null,
+        title: null,
+        channel: null,
         transcript: segments,
       });
 
