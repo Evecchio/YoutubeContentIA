@@ -1,4 +1,4 @@
-import { Video, Sparkles, MessageSquare, ArrowRight, Loader2 } from "lucide-react";
+import { Video, Sparkles, MessageSquare, ArrowRight, Loader2, Play } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { transcribeVideo } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { DEMO_TRANSCRIPT } from "@/lib/demoData";
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -21,15 +22,12 @@ export default function Home() {
     setIsLoading(true);
     try {
       const data = await transcribeVideo(url);
-      
-      // Store transcript data in sessionStorage for the dashboard
       sessionStorage.setItem('currentTranscript', JSON.stringify(data));
-      
       setLocation(`/watch/${data.videoId}`);
     } catch (error: any) {
       toast({
-        title: "Error",
-        description: error.message || "Could not transcribe video. Please try again.",
+        title: "API Limit Reached",
+        description: "Try the demo instead to explore all features!",
         variant: "destructive"
       });
     } finally {
@@ -37,9 +35,13 @@ export default function Home() {
     }
   };
 
+  const handleTryDemo = () => {
+    sessionStorage.setItem('currentTranscript', JSON.stringify(DEMO_TRANSCRIPT));
+    setLocation(`/watch/demo`);
+  };
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Abstract Background Elements */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] bg-primary/10 rounded-full blur-3xl" />
         <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] bg-indigo-300/20 rounded-full blur-3xl" />
@@ -101,6 +103,19 @@ export default function Home() {
                 )}
               </Button>
             </form>
+            <div className="mt-3 flex justify-center">
+              <Button 
+                type="button"
+                variant="ghost" 
+                size="sm"
+                onClick={handleTryDemo}
+                className="text-slate-500 hover:text-primary"
+                data-testid="button-try-demo"
+              >
+                <Play className="w-4 h-4 mr-2" />
+                Try Demo
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
