@@ -25,9 +25,12 @@ export default function Home() {
       sessionStorage.setItem('currentTranscript', JSON.stringify(data));
       setLocation(`/watch/${data.videoId}`);
     } catch (error: any) {
+      const errorMessage = error?.message || "Error desconocido";
       toast({
-        title: "API Limit Reached",
-        description: "Try the demo instead to explore all features!",
+        title: "Error al obtener transcripción",
+        description: errorMessage.includes("subtítulos") 
+          ? errorMessage 
+          : "No se pudo obtener la transcripción. Prueba con el demo para explorar las funciones.",
         variant: "destructive"
       });
     } finally {
