@@ -39,10 +39,19 @@ export async function registerRoutes(
       }
 
       // Fetch transcript using free youtube-transcript package
-      const transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
+      let transcriptData;
+      try {
+        transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
+      } catch (fetchError: any) {
+        console.error("YouTube transcript fetch error:", fetchError);
+        if (fetchError.message?.includes("disabled") || fetchError.message?.includes("Transcript")) {
+          throw new Error("Este video no tiene subtítulos disponibles. Por favor, intenta con otro video que tenga subtítulos activados.");
+        }
+        throw new Error("No se pudo obtener la transcripción. El video puede no tener subtítulos o YouTube bloqueó la solicitud.");
+      }
       
       if (!transcriptData || transcriptData.length === 0) {
-        throw new Error("No transcript available for this video");
+        throw new Error("Este video no tiene subtítulos disponibles. Por favor, intenta con otro video.");
       }
 
       // Convert to our segment format
